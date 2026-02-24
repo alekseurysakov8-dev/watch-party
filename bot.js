@@ -1,28 +1,65 @@
-// bot.js
 const express = require('express');
 const path = require('path');
 const { Telegraf } = require('telegraf');
 
 const app = express();
-const bot = new Telegraf(process.env.BOT_TOKEN); // токен берётся из Environment Variables
 
-// фронт
+// ====== ПРОВЕРКА ТОКЕНА ======
+if (!process.env.BOT_TOKEN) {
+  console.error('❌ BOT_TOKEN is missing in Environment Variables');
+  process.exit(1);
+}
+
+const bot = new Telegraf(process.env.BOT_TOKEN);
+
+// ====== ОТДАЁМ ФРОНТ ======
 app.use(express.static(path.join(__dirname, 'public')));
+
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// бот реагирует на /start
-bot.start((ctx) => ctx.reply('Hello! Bot is running.'));
+// ====== /start ======
+bot.start((ctx) => {
+  ctx.reply('🚀 Watch Party bot is working!');
+});
 
-// бот реагирует на пересылаемые видео и ссылки на t.me
+// ====== ОБРАБОТКА ССЫЛОК И ВИДЕО ======
 bot.on('message', async (ctx) => {
-  if (ctx.message.video || ctx.message.text?.includes('t.me')) {
-    await ctx.reply('Got your video/link!');
+  try {
+    if (ctx.message.video) {
+      await ctx.reply('🎬 Видео получено!');
+      return;
+    }
+
+    if (ctx.message.text && ctx.message.text.includes('http')) {
+      await ctx.reply('🔗 Ссылка получена!');
+      return;
+    }
+  } catch (e) {
+    console.error('Bot error:', e);
   }
 });
 
-// запускаем сервер и бот
+// ====== 🔥 ФИКС 409 CONFLICT ======
+(async () => {
+  try {
+    await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+    console.log('✅ Webhook cleared');
+  } catch (e) {
+    console.log('Webhook clear skip');
+  }
+
+  bot.launch();
+})();
+
+// ====== ЗАПУСК СЕРВЕРА ======
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-bot.launch();
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
+// ====== ГРАЦИОЗНАЯ ОСТАНОВКА ======
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
