@@ -1,33 +1,33 @@
-// bot.js — бот + сервер + Socket.io
-
-const TelegramBot = require("node-telegram-bot-api");
+// bot.js — объединяет сервер и Telegram бота
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const path = require("path");
+const TelegramBot = require("node-telegram-bot-api");
 
-// ====== TELEGRAM BOT ======
-const TOKEN = process.env.TOKEN; // токен берём из Environment Variables
+// Берём токен из Environment Variables Render
+const TOKEN = process.env.TOKEN;
 if (!TOKEN) {
-  console.error("EFATAL: Telegram Bot Token not provided!");
+  console.error("ERROR: Telegram Bot Token not found in Environment Variables!");
   process.exit(1);
 }
 
 const bot = new TelegramBot(TOKEN, { polling: true });
-
-// ====== EXPRESS + SOCKET.IO ======
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// отдаём статические файлы из public
+// --- SERVER / WATCH PARTY SETUP ---
+
+// Статика для плеера
 app.use(express.static(path.join(__dirname, "public")));
 
+// Маршрут для комнаты
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public/index.html"));
 });
 
-// синхронизация видео через Socket.io
+// Socket.io — синхронизация play/pause
 io.on("connection", (socket) => {
   const room = socket.handshake.query.room;
   if (room) socket.join(room);
@@ -37,39 +37,41 @@ io.on("connection", (socket) => {
   });
 });
 
-// ====== TELEGRAM BOT ЛОГИКА ======
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// /start — приветствие
+// --- TELEGRAM BOT HANDLERS ---
+
+// /start команда
 bot.onText(/\/start/, (msg) => {
   bot.sendMessage(
     msg.chat.id,
-    "Hello! Send me a video or a Telegram channel link, and I'll create a Watch Party for you."
+    "Hello! 👋 Send me a video or a link from a Telegram channel to start a Watch Party."
   );
 });
 
-// ловим пересланные видео
+// Обработка пересланных видео или ссылок
 bot.on("message", async (msg) => {
-  const chatId = msg.chat.id;
+  try {
+    const chatId = msg.chat.id;
 
-  // если прислали видео
-  if (msg.video) {
-    const fileId = msg.video.file_id;
-    const room = Math.random().toString(36).substring(2, 8);
-    const videoUrl = `https://api.telegram.org/file/bot${TOKEN}/${(await bot.getFile(fileId)).file_path}`;
+    // Если это ссылка на канал или видео
+    if (msg.text && msg.text.startsWith("https://t.me/")) {
+      const room = Math.random().toString(36).substring(2, 8);
+      const url = `${process.env.SERVER_URL || "https://watch-party-9ufo.onrender.com"}/?room=${room}&file=${encodeURIComponent(msg.text)}`;
+      bot.sendMessage(chatId, `Watch Party created! 🎬\nOpen this link in Telegram Web View:\n${url}`);
+      return;
+    }
 
-    // формируем ссылку на комнату с room и file_id
-    const link = `${process.env.SERVER_URL || "https://watch-party-9ufo.onrender.com"}/?room=${room}&file_id=${fileId}`;
-    bot.sendMessage(chatId, `Your Watch Party is ready: ${link}`);
-  }
-
-  // если прислали ссылку на канал
-  if (msg.text && msg.text.includes("https://t.me/")) {
-    const room = Math.random().toString(36).substring(2, 8);
-    const link = `${process.env.SERVER_URL || "https://watch-party-9ufo.onrender.com"}/?room=${room}&url=${encodeURIComponent(msg.text)}`;
-    bot.sendMessage(chatId, `Your Watch Party is ready: ${link}`);
+    // Если это пересланное видео
+    if (msg.video) {
+      const fileId = msg.video.file_id;
+      const room = Math.random().toString(36).substring(2, 8);
+      const url = `${process.env.SERVER_URL || "https://watch-party-9ufo.onrender.com"}/?room=${room}&file=${fileId}`;
+      bot.sendMessage(chatId, `Watch Party created! 🎬\nOpen this link in Telegram Web View:\n${url}`);
+      return;
+    }
+  } catch (e) {
+    console.error("Bot message handler error:", e);
   }
 });
-
-// ====== СЕРВЕР ======
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
