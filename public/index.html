@@ -15,17 +15,10 @@ video, iframe { margin-top:20px; max-width:90%; }
 
 <script>
 const roomId = window.location.pathname.split('/').pop();
-
 const ws = new WebSocket(
-  (location.protocol === 'https:' ? 'wss://' : 'ws://') +
-  location.host +
-  '?room=' + roomId
+  (location.protocol==='https:'?'wss://':'ws://') + location.host + '?room=' + roomId
 );
-
-let player;
-let type;
-
-// ===== helpers =====
+let player, type;
 
 function getYouTubeId(url) {
   const reg = /(?:youtube\.com.*v=|youtu\.be\/)([^&]+)/;
@@ -33,69 +26,36 @@ function getYouTubeId(url) {
   return match ? match[1] : null;
 }
 
-function send(action, time) {
-  ws.send(JSON.stringify({ type: action, time }));
-}
+function send(action, time) { ws.send(JSON.stringify({ type: action, time })); }
 
-// ===== websocket =====
-
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-
-  if (data.type === 'init') {
-    type = data.videoType;
-    createPlayer(data.videoUrl);
-  }
-
+ws.onmessage = (e) => {
+  const data = JSON.parse(e.data);
+  if (data.type === 'init') { type = data.videoType; createPlayer(data.videoUrl); }
   if (data.type === 'play') player.play();
   if (data.type === 'pause') player.pause();
   if (data.type === 'seek') player.currentTime = data.time;
 };
 
-// ===== player factory =====
-
 function createPlayer(url) {
   const container = document.getElementById('player');
 
-  // ===== YouTube =====
-  if (type === 'youtube') {
+  if (type==='youtube') {
     const id = getYouTubeId(url);
-    container.innerHTML =
-      `<iframe id="yt"
-        width="800"
-        height="450"
-        src="https://www.youtube.com/embed/${id}?enablejsapi=1"
-        allow="autoplay"></iframe>`;
-
-    player = {
-      play: () => document.getElementById('yt').contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*'),
-      pause: () => document.getElementById('yt').contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*'),
-      get currentTime() { return 0; },
-      set currentTime(t) {}
-    };
-
+    container.innerHTML = `<iframe id="yt" width="800" height="450" src="https://www.youtube.com/embed/${id}?enablejsapi=1" allow="autoplay"></iframe>`;
+    player = { play: ()=>document.getElementById('yt').contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}','*'), pause: ()=>document.getElementById('yt').contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}','*'), get currentTime(){return 0}, set currentTime(t){} };
     return;
   }
 
-  // ===== MP4 =====
-  if (type === 'mp4') {
+  if (type==='mp4') {
     container.innerHTML = `<video id="vid" controls src="${url}"></video>`;
     player = document.getElementById('vid');
-
-    player.onplay = () => send('play');
-    player.onpause = () => send('pause');
-    player.onseeked = () => send('seek', player.currentTime);
-
+    player.onplay = ()=>send('play');
+    player.onpause = ()=>send('pause');
+    player.onseeked = ()=>send('seek', player.currentTime);
     return;
   }
 
-  // ===== Telegram embed =====
-  if (type === 'telegram') {
-    container.innerHTML =
-      `<iframe src="${url}?embed=1"
-        width="400"
-        height="600"></iframe>`;
-  }
+  if (type==='telegram') container.innerHTML = `<iframe src="${url}?embed=1" width="400" height="600"></iframe>`;
 }
 </script>
 
