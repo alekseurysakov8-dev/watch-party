@@ -2,64 +2,47 @@ const express = require('express');
 const path = require('path');
 const { Telegraf } = require('telegraf');
 
-const app = express();
-
-// ====== ПРОВЕРКА ТОКЕНА ======
 if (!process.env.BOT_TOKEN) {
-  console.error('❌ BOT_TOKEN is missing in Environment Variables');
-  process.exit(1);
+  throw new Error('BOT_TOKEN is not set');
 }
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
-// ====== ОТДАЁМ ФРОНТ ======
+// ===== Express =====
+const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// ====== /start ======
-bot.start((ctx) => {
-  ctx.reply('🚀 Watch Party bot is working!');
-});
+// ===== Telegram =====
+bot.start((ctx) => ctx.reply('Hello! Bot is running.'));
 
-// ====== ОБРАБОТКА ССЫЛОК И ВИДЕО ======
 bot.on('message', async (ctx) => {
   try {
-    if (ctx.message.video) {
-      await ctx.reply('🎬 Видео получено!');
-      return;
+    if (ctx.message.video || ctx.message.text?.includes('t.me')) {
+      await ctx.reply('Got your video/link!');
     }
-
-    if (ctx.message.text && ctx.message.text.includes('http')) {
-      await ctx.reply('🔗 Ссылка получена!');
-      return;
-    }
-  } catch (e) {
-    console.error('Bot error:', e);
+  } catch (err) {
+    console.error('Message error:', err);
   }
 });
 
-// ====== 🔥 ФИКС 409 CONFLICT ======
-(async () => {
-  try {
-    await bot.telegram.deleteWebhook({ drop_pending_updates: true });
-    console.log('✅ Webhook cleared');
-  } catch (e) {
-    console.log('Webhook clear skip');
-  }
+// ===== Start =====
+async function start() {
+  await bot.launch();
+  console.log('Bot started');
+}
 
-  bot.launch();
-})();
+start().catch(console.error);
 
-// ====== ЗАПУСК СЕРВЕРА ======
+// graceful stop
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
+// ===== Server =====
 const PORT = process.env.PORT || 10000;
-
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
-// ====== ГРАЦИОЗНАЯ ОСТАНОВКА ======
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
