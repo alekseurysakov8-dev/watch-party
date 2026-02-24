@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Watch Party</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+body { display: flex; justify-content: center; align-items: center; height: 100vh; background: #000; }
+video { width: 80%; max-width: 800px; }
+</style>
+</head>
+<body>
+
+<video id="video" controls></video>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+const room = params.get('room');
+const videoUrl = params.get('video');
+
+if (!videoUrl) {
+  document.body.innerHTML = "<h1 style='color:white'>No video provided!</h1>";
+  throw new Error("No video URL provided");
+}
+
+const video = document.getElementById('video');
+video.src = videoUrl;
+
+const socket = io({ query: { room } });
+
+video.addEventListener('play', () => socket.emit('video-action', { action: 'play', time: video.currentTime }));
+video.addEventListener('pause', () => socket.emit('video-action', { action: 'pause', time: video.currentTime }));
+
+socket.on('video-action', (data) => {
+  if (data.action === 'play' && video.paused) {
+    video.currentTime = data.time;
+    video.play();
+  }
+  if (data.action === 'pause' && !video.paused) {
+    video.currentTime = data.time;
+    video.pause();
+  }
+});
+</script>
+
+</body>
+</html>
