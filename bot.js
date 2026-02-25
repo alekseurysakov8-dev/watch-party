@@ -6,8 +6,9 @@ const path = require('path');
 
 const TOKEN = process.env.BOT_TOKEN;
 const BASE_URL = process.env.APP_URL || 'http://localhost:3000';
-const bot = new Telegraf(TOKEN);
+const PORT = process.env.PORT || 3000;
 
+const bot = new Telegraf(TOKEN);
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
@@ -31,12 +32,7 @@ io.on('connection', socket => {
   });
 
   socket.on('videoEvent', data => {
-    // двойное управление: если кто-то ставит на паузу, другой тоже
-    if (data.action === 'pause') {
-      io.to(data.roomId).emit('videoEvent', { action: 'pause' });
-    } else if (data.action === 'play') {
-      io.to(data.roomId).emit('videoEvent', { action: 'play' });
-    }
+    socket.to(data.roomId).emit('videoEvent', data);
   });
 
   socket.on('disconnect', () => {
@@ -50,33 +46,40 @@ io.on('connection', socket => {
   });
 });
 
-// ===== Telegram Bot =====
-bot.on('message', async (ctx) => {
-  try {
-    const chatId = ctx.chat.id;
+// ===== Telegram webhook =====
+app.use(bot.webhookCallback('/bot'));
+
+bot.start(async ctx => {
+  await ctx.reply('🎬 Welcome! Send me a video or YouTube link to create a room.');
+});
+
+bot.on('video', async ctx => {
+  const roomId = Math.random().toString(36).substring(2, 8);
+  const file = await ctx.telegram.getFile(ctx.message.video.file_id);
+  const videoUrl = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`;
+  const roomLink = `${BASE_URL}/?room=${roomId}&video=${encodeURIComponent(videoUrl)}`;
+  await ctx.reply(`🎬 Room ready:\n${roomLink}`);
+});
+
+bot.on('text', async ctx => {
+  if (ctx.message.text.includes('youtu')) {
     const roomId = Math.random().toString(36).substring(2, 8);
-
-    let videoUrl = '';
-    if (ctx.message.video) {
-      const fileLink = await ctx.telegram.getFileLink(ctx.message.video.file_id);
-      videoUrl = fileLink.href;
-    }
-    if (ctx.message.text && ctx.message.text.includes('youtu')) videoUrl = ctx.message.text.trim();
-
-    if (!videoUrl) {
-      await ctx.reply('❗ Please send a video or YouTube link');
-      return;
-    }
-
+    const videoUrl = ctx.message.text.trim();
     const roomLink = `${BASE_URL}/?room=${roomId}&video=${encodeURIComponent(videoUrl)}`;
     await ctx.reply(`🎬 Room ready:\n${roomLink}`);
-  } catch (e) {
-    console.error('BOT ERROR:', e);
+  } else {
+    await ctx.reply('❗ Please send a video or YouTube link');
   }
 });
 
-bot.launch();
+bot.launch({
+  webhook: {
+    domain: BASE_URL,
+    port: PORT
+  }
+});
 
-// ===== Start Server =====
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => console.log('Server running on port', PORT));
+// ===== start server =====
+server.listen(PORT, '0.0.0.0', () => {
+  console.log('🚀 Server running on port', PORT);
+});

@@ -6,6 +6,7 @@ const socket = io();
 const video = document.getElementById('video');
 const nickList = document.getElementById('nickList');
 
+let isSyncing = false;
 const myNick = "User" + Math.floor(Math.random() * 1000);
 
 // ===== загрузка видео =====
@@ -20,18 +21,31 @@ if (videoUrl) {
 // ===== join room =====
 socket.emit('joinRoom', { roomId, nick: myNick });
 
-// ===== события =====
+// ===== отправка событий (double control) =====
 video?.addEventListener('play', () => {
-  socket.emit('videoEvent', { roomId, action: 'play' });
+  if (isSyncing) return;
+  socket.emit('videoEvent', { roomId, action: 'play', time: video.currentTime });
 });
+
 video?.addEventListener('pause', () => {
-  socket.emit('videoEvent', { roomId, action: 'pause' });
+  if (isSyncing) return;
+  socket.emit('videoEvent', { roomId, action: 'pause', time: video.currentTime });
+});
+
+video?.addEventListener('seeked', () => {
+  if (isSyncing) return;
+  socket.emit('videoEvent', { roomId, action: 'seek', time: video.currentTime });
 });
 
 // ===== получение событий =====
 socket.on('videoEvent', data => {
+  isSyncing = true;
+
   if (data.action === 'play') video.play();
   if (data.action === 'pause') video.pause();
+  if (data.action === 'seek') video.currentTime = data.time;
+
+  setTimeout(() => (isSyncing = false), 300);
 });
 
 // ===== обновление ников =====
