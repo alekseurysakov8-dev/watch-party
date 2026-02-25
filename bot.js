@@ -1,4 +1,4 @@
-const { Telegraf } = require('telegraf');
+const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -6,19 +6,21 @@ const path = require('path');
 
 const TOKEN = process.env.BOT_TOKEN;
 const BASE_URL = process.env.APP_URL || 'http://localhost:3000';
-const PORT = process.env.PORT || 3000;
 
-const bot = new Telegraf(TOKEN);
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+const bot = new TelegramBot(TOKEN);
+
+// Serve frontend
 app.use(express.static(path.join(__dirname, 'public')));
 
 const roomUsers = {}; // { roomId: [nick1, nick2] }
 
+// ===== SOCKET.IO =====
 io.on('connection', socket => {
-  console.log('User connected:', socket.id);
+  console.log('🔌 User connected:', socket.id);
 
   socket.on('joinRoom', ({ roomId, nick }) => {
     socket.join(roomId);
@@ -28,11 +30,12 @@ io.on('connection', socket => {
     roomUsers[roomId].push(nick);
 
     io.to(roomId).emit('nickList', roomUsers[roomId]);
-    console.log(`${nick} joined room ${roomId}`);
+    console.log(`👥 ${nick} joined room ${roomId}`);
   });
 
   socket.on('videoEvent', data => {
-    socket.to(data.roomId).emit('videoEvent', data);
+    // double control: emit to all, including sender
+    io.to(data.roomId).emit('videoEvent', data);
   });
 
   socket.on('disconnect', () => {
@@ -42,44 +45,46 @@ io.on('connection', socket => {
         io.to(roomId).emit('nickList', roomUsers[roomId]);
       }
     }
-    console.log('User disconnected:', socket.id);
+    console.log('❌ User disconnected:', socket.id);
   });
 });
 
-// ===== Telegram webhook =====
-app.use(bot.webhookCallback('/bot'));
-
-bot.start(async ctx => {
-  await ctx.reply('🎬 Welcome! Send me a video or YouTube link to create a room.');
-});
-
-bot.on('video', async ctx => {
-  const roomId = Math.random().toString(36).substring(2, 8);
-  const file = await ctx.telegram.getFile(ctx.message.video.file_id);
-  const videoUrl = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`;
-  const roomLink = `${BASE_URL}/?room=${roomId}&video=${encodeURIComponent(videoUrl)}`;
-  await ctx.reply(`🎬 Room ready:\n${roomLink}`);
-});
-
-bot.on('text', async ctx => {
-  if (ctx.message.text.includes('youtu')) {
+// ===== TELEGRAM =====
+bot.on('message', async msg => {
+  try {
+    const chatId = msg.chat.id;
     const roomId = Math.random().toString(36).substring(2, 8);
-    const videoUrl = ctx.message.text.trim();
+
+    let videoUrl = '';
+    if (msg.video) {
+      const file = await bot.getFile(msg.video.file_id);
+      videoUrl = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`;
+    }
+    if (msg.text && msg.text.includes('youtu')) videoUrl = msg.text.trim();
+
+    if (!videoUrl) {
+      await bot.sendMessage(chatId, '❗ Please send a video or YouTube link');
+      return;
+    }
+
     const roomLink = `${BASE_URL}/?room=${roomId}&video=${encodeURIComponent(videoUrl)}`;
-    await ctx.reply(`🎬 Room ready:\n${roomLink}`);
-  } else {
-    await ctx.reply('❗ Please send a video or YouTube link');
+    await bot.sendMessage(chatId, `🎬 Room ready:\n${roomLink}`);
+  } catch (e) {
+    console.error('BOT ERROR:', e);
   }
 });
+
+// ===== WEBHOOK + SERVER =====
+const PORT = process.env.PORT; // Render сам задаёт порт
 
 bot.launch({
   webhook: {
     domain: BASE_URL,
-    port: PORT
+    port: PORT,
+    hookPath: '/bot'
   }
 });
 
-// ===== start server =====
-server.listen(PORT, '0.0.0.0', () => {
-  console.log('🚀 Server running on port', PORT);
-});
+app.use(bot.webhookCallback('/bot'));
+
+server.listen(PORT, '0.0.0.0', () => console.log('🚀 Server running on port', PORT));
