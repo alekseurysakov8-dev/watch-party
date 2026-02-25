@@ -1,78 +1,76 @@
+const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
 const path = require('path');
-const { Telegraf } = require('telegraf');
-const WebSocket = require('ws');
-const { v4: uuidv4 } = require('uuid');
 
-if (!process.env.BOT_TOKEN) throw new Error('BOT_TOKEN not set');
+const TOKEN = process.env.BOT_TOKEN || 'PASTE_YOUR_TOKEN_HERE';
+const BASE_URL = process.env.APP_URL || 'http://localhost:3000';
 
-const PORT = process.env.PORT || 10000;
-const HOST = process.env.RENDER_EXTERNAL_HOSTNAME
-  ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`
-  : `http://localhost:${PORT}`;
+const bot = new TelegramBot(TOKEN, { polling: true });
 
-const bot = new Telegraf(process.env.BOT_TOKEN);
+// ===== EXPRESS =====
 const app = express();
-const rooms = {};
+const server = http.createServer(app);
+const io = new Server(server);
 
-// ====== Helpers =====
-function detectType(url) {
-  if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube';
-  if (url.endsWith('.mp4')) return 'mp4';
-  if (url.includes('t.me')) return 'telegram';
-  return 'unknown';
-}
-
-// ====== Express =====
 app.use(express.static(path.join(__dirname, 'public')));
-app.get('/room/:id', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
 
-// ====== Telegram =====
-bot.start((ctx) => ctx.reply('🎬 Send YouTube / MP4 / Telegram link'));
+// ===== SOCKET.IO =====
+io.on('connection', socket => {
+  console.log('🔌 User connected:', socket.id);
 
-bot.on('text', async (ctx) => {
-  const url = ctx.message.text.trim();
-  const type = detectType(url);
-
-  if (type === 'unknown') return ctx.reply('❌ Unsupported link');
-
-  const roomId = uuidv4().slice(0, 8);
-
-  rooms[roomId] = { url, type, clients: new Set() };
-
-  const roomUrl = `${HOST}/room/${roomId}`;
-  console.log('Room created:', roomUrl);
-
-  await ctx.reply(`✅ Room created!\nType: ${type}\n👉 ${roomUrl}`);
-});
-
-// ====== WebSocket =====
-const server = app.listen(PORT, () => console.log('Server running on', PORT));
-const wss = new WebSocket.Server({ server });
-
-wss.on('connection', (ws, req) => {
-  const params = new URL(req.url, 'http://localhost').searchParams;
-  const roomId = params.get('room');
-
-  if (!rooms[roomId]) return ws.close();
-
-  const room = rooms[roomId];
-  room.clients.add(ws);
-
-  ws.send(JSON.stringify({ type: 'init', videoUrl: room.url, videoType: room.type }));
-
-  ws.on('message', (msg) => {
-    room.clients.forEach(client => {
-      if (client !== ws && client.readyState === WebSocket.OPEN) client.send(msg.toString());
-    });
+  socket.on('joinRoom', roomId => {
+    socket.join(roomId);
+    console.log(`👥 ${socket.id} joined room ${roomId}`);
   });
 
-  ws.on('close', () => room.clients.delete(ws));
+  socket.on('videoEvent', data => {
+    socket.to(data.roomId).emit('videoEvent', data);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('❌ User disconnected:', socket.id);
+  });
 });
 
-// ====== Launch bot =====
-bot.launch();
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+// ===== TELEGRAM =====
+bot.on('message', async msg => {
+  try {
+    const chatId = msg.chat.id;
+
+    // создаём комнату
+    const roomId = Math.random().toString(36).substring(2, 8);
+
+    let videoUrl = '';
+
+    // 📹 Telegram видео
+    if (msg.video) {
+      const file = await bot.getFile(msg.video.file_id);
+      videoUrl = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`;
+    }
+
+    // 🔗 YouTube ссылка
+    if (msg.text && msg.text.includes('youtu')) {
+      videoUrl = msg.text.trim();
+    }
+
+    if (!videoUrl) {
+      await bot.sendMessage(chatId, '❗ Пришли видео или YouTube ссылку');
+      return;
+    }
+
+    const roomLink = `${BASE_URL}/?room=${roomId}&video=${encodeURIComponent(videoUrl)}`;
+
+    await bot.sendMessage(chatId, `🎬 Комната готова:\n${roomLink}`);
+  } catch (e) {
+    console.error('BOT ERROR:', e);
+  }
+});
+
+// ===== START SERVER =====
+const PORT = process.env.PORT || 3000;
+
+server.listen(PORT, '0.0.0.0', () => {
+  console.log('🚀 Server running on port', PORT);
+});
