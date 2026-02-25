@@ -3,54 +3,40 @@ const roomId = params.get('room');
 const videoUrl = params.get('video');
 
 const socket = io();
-let video = document.getElementById('video');
+const video = document.getElementById('video');
+const nickList = document.getElementById('nickList');
 
-let isSyncing = false;
+const myNick = "User" + Math.floor(Math.random() * 1000);
 
 // ===== загрузка видео =====
 if (videoUrl) {
   if (videoUrl.includes('youtu')) {
-    const id = extractYouTubeId(videoUrl);
-    video.outerHTML = `<iframe id="ytplayer" width="720" height="405"
-      src="https://www.youtube.com/embed/${id}?enablejsapi=1"
-      frameborder="0" allowfullscreen></iframe>`;
+    video.outerHTML = `<iframe width="720" height="405" src="https://www.youtube.com/embed/${extractYouTubeId(videoUrl)}" frameborder="0" allowfullscreen></iframe>`;
   } else {
     video.src = videoUrl;
   }
 }
 
 // ===== join room =====
-if (roomId) {
-  socket.emit('joinRoom', roomId);
-}
+socket.emit('joinRoom', { roomId, nick: myNick });
 
-// ===== отправка событий =====
+// ===== события =====
 video?.addEventListener('play', () => {
-  if (isSyncing) return;
-  socket.emit('videoEvent', { roomId, action: 'play', time: video.currentTime });
+  socket.emit('videoEvent', { roomId, action: 'play' });
 });
-
 video?.addEventListener('pause', () => {
-  if (isSyncing) return;
-  socket.emit('videoEvent', { roomId, action: 'pause', time: video.currentTime });
-});
-
-video?.addEventListener('seeked', () => {
-  if (isSyncing) return;
-  socket.emit('videoEvent', { roomId, action: 'seek', time: video.currentTime });
+  socket.emit('videoEvent', { roomId, action: 'pause' });
 });
 
 // ===== получение событий =====
 socket.on('videoEvent', data => {
-  if (!video) return;
-
-  isSyncing = true;
-
   if (data.action === 'play') video.play();
   if (data.action === 'pause') video.pause();
-  if (data.action === 'seek') video.currentTime = data.time;
+});
 
-  setTimeout(() => (isSyncing = false), 300);
+// ===== обновление ников =====
+socket.on('nickList', list => {
+  nickList.textContent = 'Connected: ' + list.join(', ');
 });
 
 // ===== fullscreen =====

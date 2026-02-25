@@ -1,17 +1,18 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <title>Watch Party</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <h2>🎬 Watch Party</h2>
 
-<video id="video" width="720" controls playsinline muted></video>
-
+<video id="video" width="720" controls playsinline></video>
 <br><br>
-<button id="fullscreenBtn">Большой экран</button>
+<button id="fullscreenBtn">Fullscreen</button>
+<div id="nickList">Connected: </div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script src="script.js"></script>
